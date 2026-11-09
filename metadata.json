@@ -1,0 +1,6 @@
+{
+  "name": "Linux Kernel Interactive Lab",
+  "description": "An interactive architectural explorer, simulator, and diagnostic workbench for the Linux kernel: CFS scheduler, virtual memory & page tables, VFS, syscalls, eBPF, and procfs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
