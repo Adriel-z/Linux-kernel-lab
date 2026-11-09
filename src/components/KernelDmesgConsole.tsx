@@ -11,6 +11,11 @@ import {
   generateRandomBackgroundEvent,
 } from '../kernel/eventBus';
 import {
+  generateKernelPanicLogs,
+  PanicDiagnostics,
+  PanicScenarioType,
+} from '../kernel/panicSimulator';
+import {
   Terminal,
   Play,
   Pause,
@@ -23,6 +28,11 @@ import {
   ArrowDownCircle,
   PlusCircle,
   Zap,
+  AlertOctagon,
+  RotateCcw,
+  HelpCircle,
+  Bug,
+  Flame,
 } from 'lucide-react';
 
 interface KernelDmesgConsoleProps {
@@ -42,9 +52,32 @@ export const KernelDmesgConsole: React.FC<KernelDmesgConsoleProps> = ({
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const [uptime, setUptime] = useState<number>(3.5);
+  const [activePanic, setActivePanic] = useState<PanicDiagnostics | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Trigger Panic Simulation
+  const handleTriggerPanic = (scenario: PanicScenarioType) => {
+    setIsStreaming(false);
+    const { logs: panicLogs, diagnostics } = generateKernelPanicLogs(scenario, uptime);
+    setLogs((prev) => {
+      let updated = prev;
+      for (const log of panicLogs) {
+        updated = appendKernelLog(updated, log);
+      }
+      return updated;
+    });
+    setUptime((prev) => prev + 0.05);
+    setActivePanic(diagnostics);
+  };
+
+  const handleRebootKernel = () => {
+    setLogs(createInitialKernelRingBuffer());
+    setActivePanic(null);
+    setUptime(3.5);
+    setIsStreaming(true);
+  };
 
   // Handle incoming external events from other simulators
   useEffect(() => {
@@ -191,77 +224,155 @@ export const KernelDmesgConsole: React.FC<KernelDmesgConsoleProps> = ({
         </div>
 
         {/* Diagnostic Event Injection Strip */}
-        <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center gap-2 font-mono text-xs">
-          <span className="text-slate-400 text-[11px] flex items-center gap-1 mr-1">
-            <Zap className="w-3 h-3 text-cyan-400" />
-            Inject event:
-          </span>
+        <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 font-mono text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-slate-400 text-[11px] flex items-center gap-1 mr-1">
+              <Zap className="w-3 h-3 text-cyan-400" />
+              Inject event:
+            </span>
 
-          <button
-            onClick={() =>
-              handleInjectPreset({
-                sub: 'sched',
-                lvl: 'KERN_INFO',
-                msg: 'CFS context switch: task 101 (kworker/0:1) -> task 512 (postgres-query) [vruntime=11.32ms, delta=0.66ms]',
-              })
-            }
-            className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-amber-900/40 text-amber-300 text-[11px] transition-colors"
-          >
-            + CFS Switch
-          </button>
+            <button
+              onClick={() =>
+                handleInjectPreset({
+                  sub: 'sched',
+                  lvl: 'KERN_INFO',
+                  msg: 'CFS context switch: task 101 (kworker/0:1) -> task 512 (postgres-query) [vruntime=11.32ms, delta=0.66ms]',
+                })
+              }
+              className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-amber-900/40 text-amber-300 text-[11px] transition-colors"
+            >
+              + CFS Switch
+            </button>
 
-          <button
-            onClick={() =>
-              handleInjectPreset({
-                sub: 'mm',
-                lvl: 'KERN_NOTICE',
-                msg: 'Page Fault (#PF, Error 0x0004) at 0x7f9b20001000 - demand zero allocated order 0 page (do_anonymous_page)',
-              })
-            }
-            className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-cyan-900/40 text-cyan-300 text-[11px] transition-colors"
-          >
-            + Demand Page Fault
-          </button>
+            <button
+              onClick={() =>
+                handleInjectPreset({
+                  sub: 'mm',
+                  lvl: 'KERN_NOTICE',
+                  msg: 'Page Fault (#PF, Error 0x0004) at 0x7f9b20001000 - demand zero allocated order 0 page (do_anonymous_page)',
+                })
+              }
+              className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-cyan-900/40 text-cyan-300 text-[11px] transition-colors"
+            >
+              + Demand Page Fault
+            </button>
 
-          <button
-            onClick={() =>
-              handleInjectPreset({
-                sub: 'bpf',
-                lvl: 'KERN_WARNING',
-                msg: 'xdp_drop_syn: [eth0] Dropped TCP SYN flood from 198.51.100.84:80 (verdict=XDP_DROP)',
-              })
-            }
-            className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-purple-900/40 text-purple-300 text-[11px] transition-colors"
-          >
-            + eBPF XDP Drop
-          </button>
+            <button
+              onClick={() =>
+                handleInjectPreset({
+                  sub: 'bpf',
+                  lvl: 'KERN_WARNING',
+                  msg: 'xdp_drop_syn: [eth0] Dropped TCP SYN flood from 198.51.100.84:80 (verdict=XDP_DROP)',
+                })
+              }
+              className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-purple-900/40 text-purple-300 text-[11px] transition-colors"
+            >
+              + eBPF XDP Drop
+            </button>
+          </div>
 
-          <button
-            onClick={() =>
-              handleInjectPreset({
-                sub: 'mm',
-                lvl: 'KERN_ERR',
-                msg: 'Out of Memory: Kill process 918 (stress-ng) score 840 or sacrifice child',
-              })
-            }
-            className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-rose-900/40 text-rose-300 text-[11px] transition-colors"
-          >
-            + OOM Kill
-          </button>
+          {/* Panic Simulation Trigger Group */}
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-rose-950/30 border border-rose-900/50">
+            <span className="text-rose-400 text-[11px] flex items-center gap-1 px-1.5 font-bold">
+              <Flame className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+              Panic Sim:
+            </span>
 
-          <button
-            onClick={() =>
-              handleInjectPreset({
-                sub: 'syscall',
-                lvl: 'KERN_INFO',
-                msg: 'entry_SYSCALL_64: sys_mmap(addr=0x0, len=4096, prot=0x3, flags=0x22) -> 0x7f9a40000000',
-              })
-            }
-            className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-indigo-900/40 text-indigo-300 text-[11px] transition-colors"
-          >
-            + sys_mmap()
-          </button>
+            <button
+              onClick={() => handleTriggerPanic('NULL_POINTER_DEREF')}
+              className="px-2.5 py-1 rounded bg-rose-900/40 hover:bg-rose-800/60 border border-rose-700/60 text-rose-200 text-[11px] font-semibold transition-colors"
+              title="Inject Kernel NULL Pointer Dereference Oops (#PF)"
+            >
+              NULL Ptr Oops
+            </button>
+
+            <button
+              onClick={() => handleTriggerPanic('SOFT_LOCKUP')}
+              className="px-2.5 py-1 rounded bg-rose-900/40 hover:bg-rose-800/60 border border-rose-700/60 text-rose-200 text-[11px] font-semibold transition-colors"
+              title="Inject Soft Lockup Watchdog Panic"
+            >
+              CPU Lockup
+            </button>
+
+            <button
+              onClick={() => handleTriggerPanic('OUT_OF_MEMORY')}
+              className="px-2.5 py-1 rounded bg-rose-900/40 hover:bg-rose-800/60 border border-rose-700/60 text-rose-200 text-[11px] font-semibold transition-colors"
+              title="Inject OOM Killer Panic (panic_on_oom)"
+            >
+              OOM Panic
+            </button>
+          </div>
         </div>
+
+        {/* Active Panic Troubleshooting Banner */}
+        {activePanic && (
+          <div
+            data-testid="kernel-panic-troubleshooter"
+            className="mt-4 p-4 rounded-xl bg-rose-950/50 border border-rose-600/80 space-y-3 font-mono shadow-2xl"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-rose-800/60">
+              <div className="flex items-center gap-2">
+                <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0" />
+                <div>
+                  <div className="text-rose-400 text-[11px] font-bold tracking-wider">
+                    SYSTEM HALTED · KERNEL OOPS / PANIC ACTIVE
+                  </div>
+                  <h3 className="text-sm font-bold text-white">{activePanic.title}</h3>
+                </div>
+              </div>
+
+              <button
+                onClick={handleRebootKernel}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-colors shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reboot Kernel / Clear Panic</span>
+              </button>
+            </div>
+
+            {/* Quick Diagnostic Metadata Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="p-2 rounded bg-slate-950/80 border border-rose-900/50">
+                <div className="text-[10px] text-slate-400">Faulting Symbol</div>
+                <div className="text-cyan-300 font-bold truncate mt-0.5">{activePanic.faultingSymbol}</div>
+              </div>
+              <div className="p-2 rounded bg-slate-950/80 border border-rose-900/50">
+                <div className="text-[10px] text-slate-400">CR2 / Fault Address</div>
+                <div className="text-amber-400 font-bold truncate mt-0.5">{activePanic.faultingAddress}</div>
+              </div>
+              <div className="p-2 rounded bg-slate-950/80 border border-rose-900/50">
+                <div className="text-[10px] text-slate-400">Offending PID / Comm</div>
+                <div className="text-white font-bold truncate mt-0.5">PID {activePanic.pid} ({activePanic.comm})</div>
+              </div>
+              <div className="p-2 rounded bg-slate-950/80 border border-rose-900/50">
+                <div className="text-[10px] text-slate-400">Kernel Subsystem</div>
+                <div className="text-rose-300 font-bold truncate mt-0.5">{activePanic.subsystem}</div>
+              </div>
+            </div>
+
+            {/* Root Cause Explanation */}
+            <div className="text-xs text-slate-200 leading-relaxed font-sans bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+              <span className="font-bold text-rose-300 font-mono">Root Cause: </span>
+              {activePanic.errorDescription}
+            </div>
+
+            {/* Step-by-Step Kernel Engineer Troubleshooting Guide */}
+            <div className="space-y-1.5 pt-1">
+              <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>Kernel Engineer Troubleshooting Checklist:</span>
+              </div>
+              <div className="space-y-1">
+                {activePanic.troubleshootingSteps.map((step, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-[11px] text-slate-300 bg-slate-950/50 p-1.5 rounded border border-slate-900">
+                    <span className="text-rose-400 font-bold">0{idx + 1}.</span>
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Terminal Viewport */}
